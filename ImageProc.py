@@ -39,12 +39,16 @@ plt.show()
 output_file = 'smoothed_data.xlsx'
 smoothed_data.to_excel(output_file, index=False)    
 
-center = np.array()
+center = np.array(len(wavelengths))
+pixel_positions = np.array(len(wavelengths))
 
 for i in range(len(intensities)):
     center[i] = np.argmax(smoothed_data.iloc[i, 1:])
     num_pixels = len(intensities)
-    pixel_positions = [(i - center[i]) * 0.0155 for i in range(num_pixels)]
+    pixel_positions[i] = [(i - center[i]) * 0.0155 for i in range(num_pixels)]
+    
+print(center)
+print(pixel_positions)
 
     
 plt.figure(figsize=(10, 6))
