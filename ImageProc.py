@@ -7,34 +7,58 @@ from scipy.optimize import curve_fit
 # Загрузка Excel-файла
 file_path = '514.xlsx'  # Путь к файлу Excel
 data = pd.read_excel(file_path, header=None)  # Загружаем без заголовков
-num = data.shape[1]
-x = np.linspace(0, num-1, num-1)
+num = data.shape
 
-# Выбор определенной строки
-row_number = 0  # Номер строки, которую нужно вытащить (например, 10-я строка)
-wavelengths = data.iloc[0, 1:]  # Предполагаем, что первый столбец — длины волн
-intensities = data.iloc[row_number, 1:].values  # Извлекаем значения из строки (кроме первой ячейки)
+x = np.linspace(0, num[1]-1, num[1]-1)
 
 
+wavelengths = data.iloc[:, 0]  #первый столбец — длины волн
+intensities = data.iloc[:, 1:]  # Извлекаем значения из строк
+
+smoothed_data = pd.DataFrame(index=data.index, columns=data.columns)
+smoothed_data.iloc[:, 0] = wavelengths
 
 def smooth(line, window, order): 
     y_savgol = savgol_filter(line, window_length=window, polyorder=order)
-    plt.figure(figsize=(10, 6))
-    plt.plot(x, intensities, label="Original Data (Noisy)", alpha=0.5)
-    plt.plot(x, y_savgol, label="Savitzky-Golay Smoothing", color='red', linewidth=2)
-    plt.xlabel("Pixels")
-    plt.ylabel("Intensity")
-    plt.title("Savitzky-Golay Smoothing Example")
-    plt.legend()
-    plt.grid()
-    plt.show()
     return y_savgol
 
-line = smooth(intensities, 51, 3)
+for i in range(len(intensities)):
+    row_data = intensities.iloc[i, :].values  # Значения текущей строки
+    smoothed_row = savgol_filter(row_data, 51, 3)
+    smoothed_data.iloc[i, 1:] = smoothed_row
+    plt.plot(x, smoothed_row)
 
-center = np.argmax(line)
-num_pixels = len(line)
-pixel_positions = [(i - center) * 0.0155 for i in range(num_pixels)]
+plt.xlabel("Wavelengths")
+plt.ylabel("Intensity")
+plt.title("Smoothed Spectral Lines")
+plt.legend()
+plt.grid()
+plt.show()
+
+
+output_file = 'smoothed_data.xlsx'
+smoothed_data.to_excel(output_file, index=False)    
+
+# line = smooth(intensities, 51, 3)
+
+
+# for i in range(num[0]):
+#     intensities = data.iloc[i, 1:].values
+#     y_savgol = savgol_filter(intensities, window_length=51, polyorder=3)
+#     plt.figure(figsize=(10, 6))
+#     plt.plot(x, intensities, label="Original Data (Noisy)", alpha=0.5)
+#     plt.plot(x, y_savgol, label="Savitzky-Golay Smoothing", color='red', linewidth=2)
+#     plt.xlabel("Pixels")
+#     plt.ylabel("Intensity")
+#     plt.title("Savitzky-Golay Smoothing Example")
+#     plt.legend()
+#     plt.grid()
+#     plt.show()
+
+for i in range(len(intensities)):
+    center = np.argmax(smoothed_data.iloc[i, 1:])
+    num_pixels = len(line)
+    pixel_positions = [(i - center) * 0.0155 for i in range(num_pixels)]
 
     
 plt.figure(figsize=(10, 6))
@@ -59,7 +83,7 @@ def find_line_end(line, start_index, threshold):
     return len(line) - 1  # Возвращает последний пиксель, если порог не найден
 
 # Порог "нуля" для интенсивности
-threshold = 0.7  # Задайте ваше значение порога
+threshold = 3.5  # Задайте ваше значение порога
 
 # Поиск края линии справа
 line_end_index = find_line_end(line, center, threshold=threshold)
@@ -89,6 +113,16 @@ for pos, val in zip(right_branch_positions, right_branch_values):
 
 
 
+
+# plt.figure(figsize=(10, 6))
+#     plt.plot(x, intensities, label="Original Data (Noisy)", alpha=0.5)
+#     plt.plot(x, y_savgol, label="Savitzky-Golay Smoothing", color='red', linewidth=2)
+#     plt.xlabel("Pixels")
+#     plt.ylabel("Intensity")
+#     plt.title("Savitzky-Golay Smoothing Example")
+#     plt.legend()
+#     plt.grid()
+#     plt.show()
 
 
 
