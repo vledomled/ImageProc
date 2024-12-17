@@ -39,26 +39,12 @@ plt.show()
 output_file = 'smoothed_data.xlsx'
 smoothed_data.to_excel(output_file, index=False)    
 
-# line = smooth(intensities, 51, 3)
-
-
-# for i in range(num[0]):
-#     intensities = data.iloc[i, 1:].values
-#     y_savgol = savgol_filter(intensities, window_length=51, polyorder=3)
-#     plt.figure(figsize=(10, 6))
-#     plt.plot(x, intensities, label="Original Data (Noisy)", alpha=0.5)
-#     plt.plot(x, y_savgol, label="Savitzky-Golay Smoothing", color='red', linewidth=2)
-#     plt.xlabel("Pixels")
-#     plt.ylabel("Intensity")
-#     plt.title("Savitzky-Golay Smoothing Example")
-#     plt.legend()
-#     plt.grid()
-#     plt.show()
+center = np.array()
 
 for i in range(len(intensities)):
-    center = np.argmax(smoothed_data.iloc[i, 1:])
-    num_pixels = len(line)
-    pixel_positions = [(i - center) * 0.0155 for i in range(num_pixels)]
+    center[i] = np.argmax(smoothed_data.iloc[i, 1:])
+    num_pixels = len(intensities)
+    pixel_positions = [(i - center[i]) * 0.0155 for i in range(num_pixels)]
 
     
 plt.figure(figsize=(10, 6))
