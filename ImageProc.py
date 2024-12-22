@@ -1,7 +1,5 @@
 import pandas as pd
 from scipy.signal import savgol_filter
-from scipy.optimize import curve_fit
-from scipy.optimize import minimize
 import numpy as np
 from lmfit import Model
 import matplotlib.pyplot as plt
@@ -9,7 +7,6 @@ import matplotlib.pyplot as plt
 # Параметры для сглаживания
 window_length = 51  # Размер окна (нечетное число)
 polyorder = 3       # Порядок полинома
-
 
 # Загрузка данных
 file_path = '514.xlsx'  # Укажите путь к вашему файлу
@@ -87,8 +84,8 @@ results.loc[-1] = list(wavelengths)  # Добавляем транспониро
 results.index = results.index + 1  # Сдвигаем индексы
 results.sort_index(inplace=True)  # Сортируем индексы
     
-output_file = 'right_branch_values.xlsx'
-results.to_excel(output_file, index=False)
+# output_file = 'right_branch_values.xlsx'
+# results.to_excel(output_file, index=False)
 
 
 plt.figure(figsize=(10, 6))
@@ -159,7 +156,6 @@ for i in range(1, len(results)):
 fit_results_df = pd.DataFrame(fit_results)
 output_file = 'gaussian_fit_results_dense.xlsx'
 fit_results_df.to_excel(output_file, index=False)
-print(f"Результаты аппроксимации сохранены в файл: {output_file}")
 
 
 
