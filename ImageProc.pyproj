@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>f6a198d3-3baa-48cc-800f-38eac1f1b3bf</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>ImageProc.py</StartupFile>
+    <StartupFile>Interpol.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -22,6 +22,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ImageProc.py" />
+    <Compile Include="Interpol.py" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
