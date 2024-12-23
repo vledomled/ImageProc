@@ -136,9 +136,10 @@ for i in range(1, len(results)):
     result = gauss_mod.fit(y_values, params, x=x_values)
 
     if result.success:
-        A = result.params['A'].value
+        
         mu = result.params['mu'].value
         sigma = result.params['sigma'].value
+        A = result.params['A'].value * sigma * np.sqrt(2 * np.pi)
         fit_results.append({'Radius': right_branch_positions[i-1], 'A': A, 'Mu': mu, 'Sigma': sigma})
         
         # Визуализация
