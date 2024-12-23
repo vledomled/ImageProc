@@ -14,8 +14,8 @@ def bockasten_abel_transformation(N, coefficients, r_max):
     n = len(N)
     e = np.zeros(n)
     for j in range(n):
-        for k in range(j, n):
-            e[k] += coefficients[j, k] * N[k]
+        for k in range(n):
+            e[j] += coefficients[k, j] * N[k]
         e[j] /= r_max  # Учитываем максимальный радиус
     return e
 
