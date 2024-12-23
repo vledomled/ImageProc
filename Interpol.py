@@ -43,6 +43,7 @@ intensity_columns = data.iloc[:, 1::2]
 
 # Результаты абелизации
 abel_results = pd.DataFrame()
+gauss_results = pd.DataFrame()
 
 # Абелизация каждой линии
 for i, column in enumerate(intensity_columns.columns):
@@ -63,11 +64,16 @@ for i, column in enumerate(intensity_columns.columns):
 
     # Получаем интенсивности в исходных радиусах
     matched_intensities = gaussian(radii, *popt)
+    gauss_results[f'Radius_{i+1}'] = radii
+    gauss_results[f'Line_{i+1}'] = matched_intensities
+    
 
     # Применение преобразования Абеля
     r_max = radii.max()/1000  # Максимальный радиус для текущей линии
     abelized_intensities = bockasten_abel_transformation(matched_intensities, bockasten_coefficients, r_max)
+    abel_results[f'Radius_{i+1}'] = radii
     abel_results[f'Line_{i+1}'] = abelized_intensities
+    
 
     # Визуализация
     plt.figure(figsize=(10, 6))
@@ -79,22 +85,16 @@ for i, column in enumerate(intensity_columns.columns):
     plt.title(f'Gaussian Fit and Abel Transformation for Line {i+1}')
     plt.legend()
     plt.grid()
-    plt.show()
+    #plt.show()
 
 # Сохранение результатов абелизации
-abel_results.insert(0, 'Radius', radius_columns.iloc[:, 0].dropna().values)  # Добавляем радиусы в первую колонку
-abel_results.to_excel('abel_results_bockasten_gaussian_adjusted.xlsx', index=False)
-
-print("Abel transformation results with Gaussian smoothing saved to 'abel_results_bockasten_gaussian_adjusted.xlsx'")
-
-
-
-
+abel_results.to_excel('abel_results.xlsx', index=False)
+gauss_results.to_excel('gauss_results_abel.xlsx', index=False)
 
 
 
 # Загрузка данных
-file_path = '5932.xlsx'  # Замените на путь к вашему файлу
+file_path = 'abel_results.xlsx'  # Замените на путь к вашему файлу
 data = pd.read_excel(file_path)
 
 # Разделение радиусов и интенсивностей
@@ -140,7 +140,7 @@ for i, column in enumerate(intensity_columns.columns):
     aligned_intensity_data[f'Line_{i+1}'] = interpolated_intensities
 
 # Сохранение данных
-aligned_intensity_data.to_excel('aligned_intensities_to_line_1.xlsx', index=False)
+aligned_intensity_data.to_excel('aligned.xlsx', index=False)
 
 # Визуализация
 plt.figure(figsize=(12, 8))
@@ -151,7 +151,6 @@ plt.ylabel('Intensity')
 plt.title('Aligned Intensities for All Lines Based on Line 1 Radii')
 plt.legend()
 plt.grid()
-#plt.show()
 
 # Визуализация для первой линии (сравнение исходных и интерполированных данных)
 plt.figure(figsize=(10, 6))
@@ -162,6 +161,6 @@ plt.ylabel('Intensity')
 plt.title('Comparison of Original and Interpolated Data for Line 1')
 plt.legend()
 plt.grid()
-#plt.show()
+plt.show()
 
 
