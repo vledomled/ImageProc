@@ -1,11 +1,12 @@
 import pandas as pd
 from scipy.signal import savgol_filter
+from scipy.interpolate import Akima1DInterpolator
 import numpy as np
 from lmfit import Model
 import matplotlib.pyplot as plt
 
 # Параметры для сглаживания
-window_length = 51  # Размер окна (нечетное число)
+window_length = 75  # Размер окна (нечетное число)
 polyorder = 3       # Порядок полинома
 
 # Загрузка данных
@@ -73,6 +74,8 @@ right_branch_indices = np.linspace(common_center, cutoff_index, num_points, dtyp
 right_branch_positions = [pixel_positions[i] for i in right_branch_indices]
 right_branch_values = [most_intense_line[i] for i in right_branch_indices]
 
+print(right_branch_positions)
+
 
 results = pd.DataFrame()
 
@@ -122,7 +125,7 @@ for i in range(1, len(results)):
     y_values = results.iloc[i, 1:].values  # Интенсивности текущей строки
 
     if np.max(y_values) < 1e-3:  # Пропускаем строки с недостаточными данными
-        fit_results.append({'Row': i, 'A': None, 'Mu': None, 'Sigma': None})
+        fit_results.append({'Radius': right_branch_positions[i-1], 'A': None, 'Mu': None, 'Sigma': None})
         print(f"Skipping row {i}: Insufficient data for fitting.")
         continue
 
@@ -136,7 +139,7 @@ for i in range(1, len(results)):
         A = result.params['A'].value
         mu = result.params['mu'].value
         sigma = result.params['sigma'].value
-        fit_results.append({'Row': i, 'A': A, 'Mu': mu, 'Sigma': sigma})
+        fit_results.append({'Radius': right_branch_positions[i-1], 'A': A, 'Mu': mu, 'Sigma': sigma})
         
         # Визуализация
         plt.figure(figsize=(10, 6))
@@ -149,13 +152,14 @@ for i in range(1, len(results)):
         plt.grid()
         plt.show()
     else:
-        fit_results.append({'Row': i, 'A': None, 'Mu': None, 'Sigma': None})
+        fit_results.append({'Radius': right_branch_positions[i-1], 'A': None, 'Mu': None, 'Sigma': None})
         print(f"Fit failed for row {i}")
 
 # Сохранение результатов
 fit_results_df = pd.DataFrame(fit_results)
 output_file = 'gaussian_fit_results_dense.xlsx'
 fit_results_df.to_excel(output_file, index=False)
+
 
 
 
