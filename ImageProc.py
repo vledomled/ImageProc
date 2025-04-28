@@ -1,79 +1,96 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter
 import pandas as pd
-from scipy.optimize import curve_fit
+from scipy.signal import savgol_filter
+import numpy as np
+from lmfit import Model
+import matplotlib.pyplot as plt
 
-# Загрузка Excel-файла
-file_path = '514.xlsx'  # Путь к файлу Excel
-data = pd.read_excel(file_path, header=None)  # Загружаем без заголовков
-num = data.shape[1]
-x = np.linspace(0, num-1, num-1)
+# РџР°СЂР°РјРµС‚СЂС‹ РґР»СЏ СЃРіР»Р°Р¶РёРІР°РЅРёСЏ
+window_length = 51  # Р Р°Р·РјРµСЂ РѕРєРЅР° (РЅРµС‡РµС‚РЅРѕРµ С‡РёСЃР»Рѕ)
+polyorder = 3       # РџРѕСЂСЏРґРѕРє РїРѕР»РёРЅРѕРјР°
 
-# Выбор определенной строки
-row_number = 0  # Номер строки, которую нужно вытащить (например, 10-я строка)
-wavelengths = data.iloc[0, 1:]  # Предполагаем, что первый столбец — длины волн
-intensities = data.iloc[row_number, 1:].values  # Извлекаем значения из строки (кроме первой ячейки)
+# Р—Р°РіСЂСѓР·РєР° РґР°РЅРЅС‹С…
+file_path = '514.xlsx'  # РЈРєР°Р¶РёС‚Рµ РїСѓС‚СЊ Рє РІР°С€РµРјСѓ С„Р°Р№Р»Сѓ
+data = pd.read_excel(file_path, header=None)  # Р§РёС‚Р°РµРј РґР°РЅРЅС‹Рµ Р±РµР· Р·Р°РіРѕР»РѕРІРєРѕРІ
 
+num = data.shape
+x = np.linspace(0, num[1]-1, num[1]-1)
 
-
-def smooth(line, window, order): 
-    y_savgol = savgol_filter(line, window_length=window, polyorder=order)
-    plt.figure(figsize=(10, 6))
-    plt.plot(x, intensities, label="Original Data (Noisy)", alpha=0.5)
-    plt.plot(x, y_savgol, label="Savitzky-Golay Smoothing", color='red', linewidth=2)
-    plt.xlabel("Pixels")
-    plt.ylabel("Intensity")
-    plt.title("Savitzky-Golay Smoothing Example")
-    plt.legend()
-    plt.grid()
-    plt.show()
-    return y_savgol
-
-line = smooth(intensities, 51, 3)
-
-center = np.argmax(line)
-num_pixels = len(line)
-pixel_positions = [(i - center) * 0.0155 for i in range(num_pixels)]
-
+# РћС‚РґРµР»СЏРµРј РґР»РёРЅС‹ РІРѕР»РЅ (РїРµСЂРІС‹Р№ СЃС‚РѕР»Р±РµС†) Рё РёРЅС‚РµРЅСЃРёРІРЅРѕСЃС‚Рё (РІСЃРµ РѕСЃС‚Р°Р»СЊРЅС‹Рµ)
+wavelengths = data.iloc[:, 0].values  # РџРµСЂРІС‹Р№ СЃС‚РѕР»Р±РµС† - РґР»РёРЅС‹ РІРѕР»РЅ
+intensities = data.iloc[:, 1:]  # РћСЃС‚Р°Р»СЊРЅС‹Рµ СЃС‚РѕР»Р±С†С‹ - РёРЅС‚РµРЅСЃРёРІРЅРѕСЃС‚Рё
     
-plt.figure(figsize=(10, 6))
-plt.plot(pixel_positions, line, label="Smoothed Line", color='red')
-plt.axvline(0, color='blue', linestyle='--', label="Spatial Center")  # Линия центра
-plt.xlabel("Pixel Position (Step = 0.0155)")
-plt.ylabel("Intensity")
-plt.title("Spectral Line with Spatial Center")
+
+# РЎРіР»Р°Р¶РёРІР°РЅРёРµ РІСЃРµС… СЃС‚СЂРѕРє
+smoothed_data = pd.DataFrame()
+for i in range(len(intensities)):
+    row_data = intensities.iloc[i, :].values
+    smoothed_row = savgol_filter(row_data, window_length=window_length, polyorder=polyorder)
+    smoothed_data[f"Line_{i+1}"] = smoothed_row
+
+# Р“СЂР°С„РёРє СЃРіР»Р°Р¶РµРЅРЅС‹С… РґР°РЅРЅС‹С…
+plt.figure(figsize=(12, 8))
+for i in range(len(intensities)):
+    plt.plot(x, smoothed_data[f"Line_{i+1}"], label=f"Line {i+1}")
+    plt.plot(x , intensities.iloc[i, :], alpha=0.5)
+plt.xlabel("Pixels")
+plt.ylabel("Smoothed Intensity")
+plt.title("Smoothed Spectral Lines")
 plt.legend()
 plt.grid()
 plt.show()
 
-# Вывод результатов
-print(f"Center: {center}")
 
 
-# Функция для поиска края линии справа
-def find_line_end(line, start_index, threshold):
-    for i in range(start_index, len(intensities)):
-        if line[i] < threshold:
+# РћРїСЂРµРґРµР»РµРЅРёРµ СЃР°РјРѕР№ РёРЅС‚РµРЅСЃРёРІРЅРѕР№ Р»РёРЅРёРё
+total_intensity = smoothed_data.sum(axis=0)
+most_intense_line_index = total_intensity.idxmax()
+most_intense_line = smoothed_data[most_intense_line_index].values
+
+common_center = np.argmax(most_intense_line)
+
+threshold = float(input("Enter threshold: "))
+
+
+# Р¤СѓРЅРєС†РёСЏ РґР»СЏ РЅР°С…РѕР¶РґРµРЅРёСЏ С‚РѕС‡РєРё РѕР±СЂРµР·РєРё РїРѕ РїРѕСЂРѕРіСѓ
+def find_cutoff_point(data, start_index, threshold):
+    for i in range(start_index, len(data)):
+        if data[i] < threshold:
             return i
-    return len(line) - 1  # Возвращает последний пиксель, если порог не найден
+    return len(data) - 1  # Р•СЃР»Рё РїРѕСЂРѕРі РЅРµ РЅР°Р№РґРµРЅ, РІРµСЂРЅС‘Рј РїРѕСЃР»РµРґРЅРёР№ РёРЅРґРµРєСЃ
 
-# Порог "нуля" для интенсивности
-threshold = 0.7  # Задайте ваше значение порога
 
-# Поиск края линии справа
-line_end_index = find_line_end(line, center, threshold=threshold)
 
-# Генерация 10 равноотдаленных точек между центром и краем
+# РћРїСЂРµРґРµР»СЏРµРј С‚РѕС‡РєСѓ РѕР±СЂРµР·РєРё РґР»СЏ СЃР°РјРѕР№ РёРЅС‚РµРЅСЃРёРІРЅРѕР№ Р»РёРЅРёРё
+cutoff_index = find_cutoff_point(most_intense_line, common_center, threshold)
+
+
+#num_pixels = len(intensities)
+pixel_positions = [(i - common_center) * 0.0155 for i in range(num[1]-1)]
+
+# РџСЂР°РІР°СЏ РІРµС‚РєР°: РґР°РЅРЅС‹Рµ РѕС‚ С†РµРЅС‚СЂР° РґРѕ РїРѕСЂРѕРіР° РґР»СЏ СЃР°РјРѕР№ РёРЅС‚РµРЅСЃРёРІРЅРѕР№ Р»РёРЅРёРё
 num_points = 10
-right_branch_indices = np.linspace(center, line_end_index, num_points, dtype=int)
+right_branch_indices = np.linspace(common_center, cutoff_index, num_points, dtype=int)
 right_branch_positions = [pixel_positions[i] for i in right_branch_indices]
-right_branch_values = [line[i] for i in right_branch_indices]
+right_branch_values = [most_intense_line[i] for i in right_branch_indices]
 
-# Визуализация результата
+
+results = pd.DataFrame()
+
+for i in range(len(intensities)):
+    smoothed_line = smoothed_data[f"Line_{i+1}"].values
+    results[i+1] = [smoothed_line[idx] for idx in right_branch_indices]
+    
+results.loc[-1] = list(wavelengths)  # Р”РѕР±Р°РІР»СЏРµРј С‚СЂР°РЅСЃРїРѕРЅРёСЂРѕРІР°РЅРЅС‹Рµ РґР°РЅРЅС‹Рµ РґР»РёРЅ РІРѕР»РЅ
+results.index = results.index + 1  # РЎРґРІРёРіР°РµРј РёРЅРґРµРєСЃС‹
+results.sort_index(inplace=True)  # РЎРѕСЂС‚РёСЂСѓРµРј РёРЅРґРµРєСЃС‹
+    
+# output_file = 'right_branch_values.xlsx'
+# results.to_excel(output_file, index=False)
+
+
 plt.figure(figsize=(10, 6))
-plt.plot(pixel_positions, line, label="Smoothed Line", color='red')
-plt.axvline(0, color='blue', linestyle='--', label="Spatial Center")  # Линия центра
+plt.plot(pixel_positions, most_intense_line, label="Smoothed Line", color='red')
+plt.axvline(0, color='blue', linestyle='--', label="Spatial Center")  
 plt.scatter(right_branch_positions, right_branch_values, color='green', zorder=5, label="Right Branch Points")
 plt.xlabel("Pixel Position (Step = 0.0155)")
 plt.ylabel("Intensity")
@@ -82,46 +99,64 @@ plt.legend()
 plt.grid()
 plt.show()
 
-# Вывод результатов
-print("Coordinates and values:")
-for pos, val in zip(right_branch_positions, right_branch_values):
-    print(f"Pos: {pos:.4f}, Value: {val:.4f}")
+
+# Р“Р°СѓСЃСЃРѕРІР° С„СѓРЅРєС†РёСЏ
+def gaussian_model(x, A, mu, sigma):
+    return A * np.exp(-(x - mu)**2 / (2 * sigma**2))
+
+# РЎРѕР·РґР°РЅРёРµ РјРѕРґРµР»Рё
+gauss_mod = Model(gaussian_model)
+
+
+# Р”Р»РёРЅС‹ РІРѕР»РЅ (x Р·РЅР°С‡РµРЅРёСЏ)
+x_values = results.iloc[0, 1:].values  # РџРµСЂРІР°СЏ СЃС‚СЂРѕРєР° - РґР»РёРЅС‹ РІРѕР»РЅ
+
+# Р РµР·СѓР»СЊС‚Р°С‚С‹ Р°РїРїСЂРѕРєСЃРёРјР°С†РёРё
+fit_results = []
+
+# Р”Р»СЏ РїР»Р°РІРЅРѕСЃС‚Рё СЃРѕР·РґР°С‘Рј Р±РѕР»РµРµ РїР»РѕС‚РЅС‹Р№ РјР°СЃСЃРёРІ С‚РѕС‡РµРє (СѓРІРµР»РёС‡РёРІР°РµРј РєРѕР»РёС‡РµСЃС‚РІРѕ С‚РѕС‡РµРє)
+x_dense = np.linspace(min(x_values), max(x_values), 5000)  # 5000 С‚РѕС‡РµРє РґР»СЏ РіР»Р°РґРєРѕР№ Р°РїРїСЂРѕРєСЃРёРјР°С†РёРё
+
+# РђРїСЂРѕРєСЃРёРјР°С†РёСЏ РєР°Р¶РґРѕР№ СЃС‚СЂРѕРєРё (РЅР°С‡РёРЅР°СЏ СЃРѕ РІС‚РѕСЂРѕР№ СЃС‚СЂРѕРєРё)
+for i in range(1, len(results)):
+    y_values = results.iloc[i, 1:].values  # РРЅС‚РµРЅСЃРёРІРЅРѕСЃС‚Рё С‚РµРєСѓС‰РµР№ СЃС‚СЂРѕРєРё
+
+    if np.max(y_values) < 1e-3:  # РџСЂРѕРїСѓСЃРєР°РµРј СЃС‚СЂРѕРєРё СЃ РЅРµРґРѕСЃС‚Р°С‚РѕС‡РЅС‹РјРё РґР°РЅРЅС‹РјРё
+        fit_results.append({'Row': i, 'A': None, 'Mu': None, 'Sigma': None})
+        print(f"Skipping row {i}: Insufficient data for fitting.")
+        continue
+
+    # РќР°С‡Р°Р»СЊРЅС‹Рµ РїСЂРёР±Р»РёР¶РµРЅРёСЏ
+    params = gauss_mod.make_params(A=np.max(y_values), mu=x_values[np.argmax(y_values)], sigma=0.1)
+
+    # Р¤РёС‚С‚РёРЅРі РјРѕРґРµР»Рё
+    result = gauss_mod.fit(y_values, params, x=x_values)
+
+    if result.success:
+        A = result.params['A'].value
+        mu = result.params['mu'].value
+        sigma = result.params['sigma'].value
+        fit_results.append({'Row': i, 'A': A, 'Mu': mu, 'Sigma': sigma})
+        
+        # Р’РёР·СѓР°Р»РёР·Р°С†РёСЏ
+        plt.figure(figsize=(10, 6))
+        plt.scatter(x_values, y_values, label='Original Data', color='blue')
+        plt.plot(x_dense, gaussian_model(x_dense, A, mu, sigma), label='Gaussian Fit (Smooth)', color='red')
+        plt.xlabel('Wavelength')
+        plt.ylabel('Intensity')
+        plt.title(f'Gaussian Fit (Row {i})')
+        plt.legend()
+        plt.grid()
+        plt.show()
+    else:
+        fit_results.append({'Row': i, 'A': None, 'Mu': None, 'Sigma': None})
+        print(f"Fit failed for row {i}")
+
+# РЎРѕС…СЂР°РЅРµРЅРёРµ СЂРµР·СѓР»СЊС‚Р°С‚РѕРІ
+fit_results_df = pd.DataFrame(fit_results)
+output_file = 'gaussian_fit_results_dense.xlsx'
+fit_results_df.to_excel(output_file, index=False)
 
 
 
-
-
-
-
-# # Гауссова функция
-# def gaussian(x, A, mu, sigma):
-#     return A * np.exp(-(x - mu)**2 / (2 * sigma**2))
-
-# # Координаты правой ветки
-# x_data = np.array(right_branch_positions)  # Позиции точек
-# y_data = np.array(right_branch_values)     # Значения интенсивности
-
-# # Начальные приближения для параметров A, mu, sigma
-# initial_guess = [max(y_data), x_data[np.argmax(y_data)], 0.1]
-
-# # Подгонка данных функцией Гаусса
-# params, covariance = curve_fit(gaussian, x_data, y_data, p0=initial_guess)
-
-# # Полученные параметры
-# A_fit, mu_fit, sigma_fit = params
-# print(f"Gauss:\A: {A_fit:.4f}\nCenter: {mu_fit:.4f}\nSigma: {sigma_fit:.4f}")
-
-# # Построение исходных точек и аппроксимации
-# x_fit = np.linspace(min(x_data), max(x_data), 100)
-# y_fit = gaussian(x_fit, *params)
-
-# plt.figure(figsize=(10, 6))
-# plt.scatter(x_data, y_data, color='red', label="Data Points")  # Исходные точки
-# plt.plot(x_fit, y_fit, color='blue', label="Gaussian Fit")     # Гауссова аппроксимация
-# plt.xlabel("Pixel Position")
-# plt.ylabel("Intensity")
-# plt.title("Gaussian Fit of Right Branch")
-# plt.legend()
-# plt.grid()
-# plt.show()
 
