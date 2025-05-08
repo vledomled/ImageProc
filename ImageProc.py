@@ -9,12 +9,19 @@ import matplotlib.pyplot as plt
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
+
+
 def load_data(filepath: Path) -> pd.DataFrame:
     try:
         return pd.read_excel(filepath, header=None)
     except Exception as e:
         logging.error(f"Failed to load file {filepath}: {e}")
         raise
+
+def cut_line(data: pd.DataFrame, bottom: float, top: float) -> pd.DataFrame:
+    return data[(data.iloc[:, 0] >= bottom) & (data.iloc[:, 0] <= top)]
+
+
 
 def smooth_data(intensities: pd.DataFrame, window_length: int, polyorder: int) -> pd.DataFrame:
     smoothed = pd.DataFrame()
@@ -60,12 +67,20 @@ def fit_gaussian(x_values, y_values):
 
 def main():
     file_base = input('Enter file name (without .xlsx): ').strip()
-    name_line = input('Enter line wavelength name: ').strip()
+    name_line = input('Enter line wavelength: ').strip()
     window_length = int(input('Enter smoothing window length (odd number, e.g., 75): ') or 75)
     polyorder = int(input('Enter polynomial order for smoothing (e.g., 3): ') or 3)
 
+    bottom_wl = float(input('Enter bottom wavelength: '))
+    top_wl = float(input('Enter top wavelength: '))
+
+
+
     file_path = Path(file_base + '.xlsx')
     data = load_data(file_path)
+
+    data = cut_line(data, bottom_wl, top_wl)
+    print('Cutted file')
 
     wavelengths = data.iloc[:, 0].values
     intensities = data.iloc[:, 1:]
