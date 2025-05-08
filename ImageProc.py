@@ -80,7 +80,7 @@ def main():
     data = load_data(file_path)
 
     data = cut_line(data, bottom_wl, top_wl)
-    print('Cutted file')
+    print(f"Cutted file length {len(data)}")
 
     wavelengths = data.iloc[:, 0].values
     intensities = data.iloc[:, 1:]
