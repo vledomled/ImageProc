@@ -138,7 +138,9 @@ def main():
     results.sort_index(inplace=True)
 
     (Path.cwd() / 'results').mkdir(exist_ok=True)
-    results.transpose().to_excel(Path('results') / 'res_bef_gauss.xlsx', index=False)
+    header = right_positions
+    header.insert(0, 'Wavelength')
+    results.transpose().to_excel(Path('results') / f'{name_line}_bef_gauss.xlsx', index=False, header=header)
 
     fit_results = []
     x_vals = results.iloc[0, 1:].values
@@ -171,7 +173,7 @@ def main():
     plt.show()
 
     fit_df = pd.DataFrame(fit_results)
-    fit_df.to_excel(Path('results') / f'{name_line}_gauss.xlsx', index=False)
+    fit_df.to_excel(Path('results') / f'{name_line}_gauss.xlsx', index=False, header=False)
 
 if __name__ == "__main__":
     main()
