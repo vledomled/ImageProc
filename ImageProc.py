@@ -91,7 +91,7 @@ def main():
     sum_top = top_lines.sum(axis=1)
 
     # График топ-5 линий и суммы
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(6, 8))
     for line in top_lines.columns:
         plt.plot(x, top_lines[line], label=f"{line}")
     plt.plot(x, sum_top, label="Sum of Top 5 Lines", linestyle="--", color="black")
@@ -158,7 +158,7 @@ def main():
         fit = fit_gaussian(x_vals, y_vals)
         if fit:
             area = fit['A'] * fit['Sigma'] * np.sqrt(2 * np.pi)
-            fit_results.append({'Radius': right_positions[i-1], name_line: area})
+            fit_results.append({'Radius': right_positions[i], name_line: area})
 
             # График фиттинга
             plt.figure(figsize=(10, 6))
