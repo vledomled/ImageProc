@@ -101,6 +101,8 @@ def main():
     plt.legend()
     plt.grid()
     plt.show()
+    print('Max pos: ', sum_top.idxmax())
+    
     threshold = float(input('Enter threshold: '))
     print('Enter max position manually? (Enter 1 if NO)')
     manual_choice = int(input().strip())
