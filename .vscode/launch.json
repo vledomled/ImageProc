@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: текущий файл (debug)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "justMyCode": false,          // показывать полный traceback
+      "subProcess": true,           // если код порождает подпроцессы
+      "env": { "PYTHONUNBUFFERED": "1" }
+    }
+  ]
+}
