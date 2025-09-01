@@ -6,17 +6,14 @@ from scipy.stats import linregress
 # ====== НАСТРОЙКИ ======
 in_xlsx  = "abel_results_interpolated_akima.xlsx"  # файл после абелизации/интерполяции
 out_dir  = "results"
-r_ref_mm = 0.0                                      # радиус для одной диаграммы Больцмана
+r_ref_mm = 0.0                                     
 os.makedirs(out_dir, exist_ok=True)
 
-# ---- твои данные концентрации (м^-3) на каждой точке радиуса ----
-# Поставил те, что ты скинул (10 штук). При необходимости замени/добавь.
 n_vals = np.array([
     6.77e20, 6.71e20, 6.77e20, 6.71e20, 6.80e20,
     6.74e20, 6.91e20, 6.88e20, 6.98e20, 6.12e20
 ], dtype=float)
 
-# ---- константы и линии (вшиты) ----
 K_B_EV = 8.617333262e-5  # eV/K
 # wavelength_nm : (E_eV, gf)
 LINE_DB = {
