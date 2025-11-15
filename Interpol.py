@@ -19,24 +19,29 @@ def bockasten_abel_transformation(N, coefficients, r_max):
     return e / (r_max * 0.001)
 
 
-def fit_and_interpolate(radii, intensities, fine_points=40):
+def fit_and_interpolate(radii, intensities, fine_points=40, mu_fixed=None):
+    # сортируем по x
     sorted_indices = np.argsort(radii)
     radii = radii[sorted_indices]
     intensities = intensities[sorted_indices]
 
-    mu_fixed = radii[0]
+    # если центр не задан – берём по максимуму
+    if mu_fixed is None:
+        mu_fixed = radii[np.argmax(intensities)]
+
     try:
-        popt, _ = curve_fit(lambda x, A, sigma: constrained_gaussian(x, A, sigma, mu_fixed),
-                            radii, intensities, p0=[intensities[0], (radii.max() - radii.min())/5])
+        popt, _ = curve_fit(
+            lambda x, A, sigma: constrained_gaussian(x, A, sigma, mu_fixed),
+            radii,
+            intensities,
+            p0=[np.max(intensities), (radii.max() - radii.min())/5]
+        )
     except RuntimeError:
         logging.warning("Gaussian fit failed.")
-        return None, None, None
+        return None, None, None, None
 
     fine_radii = np.linspace(radii.min(), radii.max(), fine_points)
     smoothed_intensities = constrained_gaussian(fine_radii, *popt, mu_fixed)
-
-    print(fine_radii)
-    print(smoothed_intensities)
 
     return popt, mu_fixed, fine_radii, smoothed_intensities
 
@@ -82,51 +87,110 @@ def main():
         ])
 
         for i, column in enumerate(intensity_columns.columns):
-            radii = radius_columns.iloc[:, i].dropna().values
-            intensities = intensity_columns.iloc[:, i].dropna().values
+            # полный набор: левая + правая ветка
+            radii_all = radius_columns.iloc[:, i].dropna().values
+            intensities_all = intensity_columns.iloc[:, i].dropna().values
 
-            if len(np.unique(radii)) != len(radii):
+            # убираем дубликаты радиусов
+            if len(np.unique(radii_all)) != len(radii_all):
                 logging.warning(f"Duplicate radii in Line {i+1} -> keeping first occurrences")
-                uniq_r, idx = np.unique(radii, return_index=True)
-                radii = uniq_r
-                intensities = intensities[idx]
+                uniq_r, idx = np.unique(radii_all, return_index=True)
+                radii_all = uniq_r
+                intensities_all = intensities_all[idx]
 
-            popt, mu_fixed, fine_radii, smoothed_intensities = fit_and_interpolate(radii, intensities)
-            if popt is None:
+            # сортируем по радиусу
+            sorted_idx = np.argsort(radii_all)
+            radii_all = radii_all[sorted_idx]
+            intensities_all = intensities_all[sorted_idx]
+
+            # глобальный гаусс по всем данным, центр фиксируем в 0
+            mu_fixed_global = 0.0
+            popt_global, mu_fixed_global, fine_r_all, smoothed_all = fit_and_interpolate(
+                radii_all, intensities_all, fine_points=80, mu_fixed=mu_fixed_global
+            )
+            if popt_global is None:
                 continue
 
+            # один общий график "сырые точки + глобальный гаусс"
+            plot_data(radii_all, intensities_all, fine_r_all, smoothed_all,
+                    xlabel='r, mm', ylabel='I, W/m²')
 
-            plot_data(radii, intensities, fine_radii, smoothed_intensities,
-                     xlabel='r, mm', ylabel='I, W/m²')
+            # значение в центре (r=0) для подстановки, если где-то нет точки
+            center_I = constrained_gaussian(0.0, *popt_global, mu_fixed_global)
 
-            matched_intensities = constrained_gaussian(radii, *popt, mu_fixed)
+            # маски веток по знаку
+            mask_left = radii_all < 0
+            mask_right = radii_all >= 0
 
-            # ---- СКЛЕЙКА РЕЗУЛЬТАТОВ ЧЕРЕЗ CONCAT (длины могут отличаться) ----
-            gauss_block = pd.DataFrame({
-                f'Radius_{j+1}': pd.Series(radii),
-                f'Line_{j+1}': pd.Series(matched_intensities),
-            })
-            gauss_results = pd.concat([gauss_results, gauss_block], axis=1)
+            abel_branches = {}
 
-            # Абелевское преобразование: обрезаем матрицу под фактическую длину n
-            r_max = radii.max()
-            n = len(matched_intensities)
-            C = bockasten_coefficients[:n, :n]  # важно, если n != 10
-            abelized_intensities = bockasten_abel_transformation(matched_intensities, C, r_max)
+            # --- обработка двух веток с ОДНИМ набором гауссовых параметров ---
+            for branch_name, mask in (("left", mask_left), ("right", mask_right)):
+                if not np.any(mask):
+                    logging.warning(f"No points for {branch_name} branch in Line {i+1}")
+                    continue
 
-            abel_block = pd.DataFrame({
-                f'Radius_{j+1}': pd.Series(radii),
-                f'Line_{j+1}': pd.Series(abelized_intensities),
-            })
-            abel_results = pd.concat([abel_results, abel_block], axis=1)
+                # радиусы этой ветки по модулю
+                r_branch = np.abs(radii_all[mask])
 
-            plot_data(radii, intensities, radii, abelized_intensities,
-                    title=f'Abel Transformation for Line {j+1}',
-                    xlabel='Radius (mm)', ylabel='Intensity',
-                    labels=('Original', 'Abelized'))
+                # добавляем центр, если его нет
+                if not np.any(np.isclose(r_branch, 0.0, atol=1e-9)):
+                    r_branch = np.concatenate(([0.0], r_branch))
 
-        abel_results.to_excel(f'abel_results_{j}.xlsx', index=False)
-        gauss_results.to_excel('gauss_results.xlsx', index=False)
+                # сортируем и убираем дубликаты
+                r_branch = np.unique(r_branch)
+                r_branch.sort()
+
+                # значения гауссианы для этой ветки (одни и те же параметры для обеих)
+                matched_intensities = constrained_gaussian(r_branch, *popt_global, mu_fixed_global)
+
+                # ограничиваем длиной матрицы Боккастена
+                n = len(matched_intensities)
+                max_n = bockasten_coefficients.shape[0]
+                if n > max_n:
+                    logging.warning(
+                        f"Line {i+1}, {branch_name} branch: {n} points > {max_n}, truncating to first {max_n}"
+                    )
+                    n = max_n
+                    r_branch = r_branch[:n]
+                    matched_intensities = matched_intensities[:n]
+
+                r_max = r_branch.max()
+                C = bockasten_coefficients[:n, :n]
+                abelized_intensities = bockasten_abel_transformation(matched_intensities, C, r_max)
+
+                # сохраняем для общего графика
+                abel_branches[branch_name] = (r_branch, abelized_intensities)
+
+                # ---- запись результатов ----
+                gauss_block = pd.DataFrame({
+                    f'Radius_{branch_name}_{j+1}': pd.Series(r_branch),
+                    f'Line_{branch_name}_{j+1}': pd.Series(matched_intensities),
+                })
+                gauss_results = pd.concat([gauss_results, gauss_block], axis=1)
+
+                abel_block = pd.DataFrame({
+                    f'Radius_{branch_name}_{j+1}': pd.Series(r_branch),
+                    f'Line_{branch_name}_{j+1}': pd.Series(abelized_intensities),
+                })
+                abel_results = pd.concat([abel_results, abel_block], axis=1)
+
+            # --- единый график абелизации для двух веток ---
+            if abel_branches:
+                plt.figure(figsize=(12, 8))
+                if "left" in abel_branches:
+                    r_left, e_left = abel_branches["left"]
+                    plt.plot(-r_left, e_left, label='left branch')   # отражаем в минус
+                if "right" in abel_branches:
+                    r_right, e_right = abel_branches["right"]
+                    plt.plot(r_right, e_right, label='right branch')
+                plt.xlabel('Radius (mm)')
+                plt.ylabel('Emissivity (Abel)')
+                plt.title(f'Abel Transformation (Line {i+1}, both branches, global Gaussian)')
+                plt.legend()
+                plt.grid()
+                plt.show()
+
 
     # Выравнивание данных
     data = pd.read_excel('abel_results.xlsx')

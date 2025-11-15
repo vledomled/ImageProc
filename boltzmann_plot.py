@@ -1,4 +1,3 @@
-# boltzmann_run_lambda3_and_conc.py
 import os, numpy as np, pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
@@ -21,7 +20,7 @@ LINE_DB = {
     515.3230: (6.191593, 1.64659),
     521.8197: (6.192444, 1.97166876),
     578.2127: (3.78615 , 0.013),
-    465.1119: (7.737547, 1.4217765),   # запасные
+    465.1119: (7.737547, 1.4217765),  
     570.0237: (3.816948, 0.00565054),
 }
 
@@ -35,13 +34,11 @@ def nearest_nm(nm):
     ks = np.array(list(LINE_DB.keys()))
     return float(ks[np.argmin(np.abs(ks - nm))])
 
-# ====== ЗАГРУЗКА ======
 df = pd.read_excel(in_xlsx)
 radii_mm = pd.to_numeric(df["Radius_mm"], errors="coerce").to_numpy()
 cols = [c for c in df.columns if c != "Radius_mm"]
 mapping = {c: nearest_nm(header_to_nm(c)) for c in cols}
 
-# ====== ДИАГРАММА БОЛЬЦМАНА (на r_ref_mm) ======
 idx_ref = int(np.nanargmin(np.abs(radii_mm - r_ref_mm)))
 rows = []
 for col, nm in mapping.items():
@@ -59,7 +56,6 @@ slope, intercept, stderr = res.slope, res.intercept, res.stderr
 T_ref = -1.0/(K_B_EV * slope) if slope != 0 else np.nan
 T_ref_err = stderr/(K_B_EV * slope**2) if slope != 0 else np.nan
 
-# график с подписями точек
 xx = np.linspace(boltz["E_eV"].min(), boltz["E_eV"].max(), 200)
 yy = intercept + slope*xx
 plt.figure(figsize=(8,6))
@@ -74,7 +70,6 @@ plt.savefig(os.path.join(out_dir, f"boltzmann_lambda3_r{radii_mm[idx_ref]:.2f}mm
 
 boltz.to_excel(os.path.join(out_dir, f"boltzmann_points_r{radii_mm[idx_ref]:.2f}mm.xlsx"), index=False)
 
-# ====== РАДИАЛЬНЫЙ ПРОФИЛЬ ТЕМПЕРАТУРЫ ======
 T_vals, Terr_vals = [], []
 for i in range(len(radii_mm)):
     X, Ylist = [], []
@@ -98,11 +93,8 @@ for i in range(len(radii_mm)):
 prof = pd.DataFrame({"Radius_mm": radii_mm, "T_K": T_vals, "T_err": Terr_vals})
 prof.to_excel(os.path.join(out_dir, "radial_T_lambda3.xlsx"), index=False)
 
-# ====== ОБЪЕДИНЁННЫЙ ГРАФИК: T(r) + n(r) (лог. ось справа) ======
-# подгоним длину n_vals к числу радиусов (если нужно)
 n_vals = np.asarray(n_vals, dtype=float)
 if len(n_vals) != len(radii_mm):
-    # простой вариант: линейно растянуть/обрезать до нужной длины
     idx = np.linspace(0, len(n_vals)-1, len(radii_mm))
     n_vals = np.interp(idx, np.arange(len(n_vals)), n_vals)
 
@@ -114,12 +106,11 @@ axT.grid(True, which='both', alpha=0.3)
 axT.set_ylim(4000, 6000)
 
 axN = axT.twinx()
-axN.plot(radii_mm, n_vals, '-', color='red', lw=2)   # просто линией
+axN.plot(radii_mm, n_vals, '-', color='red', lw=2) 
 axN.set_xlim(0, 3)
 axN.set_yscale('log')
 axN.set_ylabel(r"n(r), m$^{-3}$", color='red')
 axN.tick_params(axis='y', colors='red')
-# диапазон как на твоём примере
 axN.set_ylim(1e19, 1e22)
 axN.set_yticks([1e19, 1e20, 1e21, 1e22])
 
