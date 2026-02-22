@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import linregress
 
 # ====== НАСТРОЙКИ ======
-in_xlsx  = "abel_results_interpolated_akima.xlsx"  # файл после абелизации/интерполяции
+in_xlsx  = 'aligned_results.xlsx'  # файл после абелизации/интерполяции
 out_dir  = "results"
 r_ref_mm = 0.0                                     
 os.makedirs(out_dir, exist_ok=True)
@@ -35,6 +35,9 @@ def nearest_nm(nm):
     return float(ks[np.argmin(np.abs(ks - nm))])
 
 df = pd.read_excel(in_xlsx)
+
+#TODO: радиусы 
+
 radii_mm = pd.to_numeric(df["Radius_mm"], errors="coerce").to_numpy()
 cols = [c for c in df.columns if c != "Radius_mm"]
 mapping = {c: nearest_nm(header_to_nm(c)) for c in cols}
