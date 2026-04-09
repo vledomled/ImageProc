@@ -26,9 +26,9 @@ plt.rcParams.update({
     "ytick.direction": "in",
     "xtick.top": True,
     "ytick.right": True,
-    "figure.figsize": (5, 5),  # Сделали чуть поменьше (5x5 дюймов)
-    "figure.dpi": 120,         # Снизили DPI для адекватного отображения на экране
-    "figure.autolayout": True  # Эта штука работает надежнее, чем вызов tight_layout() вручную
+    "figure.figsize": (5, 5),  
+    "figure.dpi": 120,         
+    "figure.autolayout": True  
 })
 
 def process_raw_file(raw_path: str, output_csv: str):
@@ -154,7 +154,7 @@ def main():
     total_pixels = data.shape[1] - 1  
     
     cu_lines = {
-        "Cu I 465.1": {"bottom": 464.5, "top": 465.6},
+        #"Cu I 465.1": {"bottom": 464.5, "top": 465.6},
         "Cu I 510.5": {"bottom": 510.0, "top": 511.0},
         "Cu I 515.3": {"bottom": 514.8, "top": 515.8},
         "Cu I 521.8": {"bottom": 521.3, "top": 522.3}
@@ -162,7 +162,7 @@ def main():
 
     window_length = 75
     polyorder = 3
-    num_points_side = 39  # 40 points per side (including boundaries)
+    num_points_side = 9  # 40 points per side (including boundaries)
     
     line_profiles = {}
     centers = {}
@@ -213,7 +213,7 @@ def main():
 
     print("\n--- Gaussian Fitting (Spectra) ---")
     all_fit_results = []
-    R2_THRESHOLD = 0.85 
+    R2_THRESHOLD = 0.95 
 
     for line_name, bounds in cu_lines.items():
         line_data = cut_line(data, bounds["bottom"], bounds["top"])

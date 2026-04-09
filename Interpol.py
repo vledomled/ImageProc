@@ -1,4 +1,5 @@
 from scipy.interpolate import Akima1DInterpolator, UnivariateSpline
+from scipy.optimize import curve_fit
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -29,6 +30,9 @@ plt.rcParams.update({
 })
 
 # --- Определение функций ---
+
+def gaussian_model(r, a, sigma):
+    return a * np.exp(-(r**2) / (2 * sigma**2))
 
 def generate_bockasten_matrix(n):
     """Генерация матрицы коэффициентов a_jk по точным формулам Бокастена."""
@@ -71,10 +75,6 @@ def generate_bockasten_matrix(n):
     return a
 
 def bockasten_abel_transformation(N, coefficients, r_max):
-    """
-    Прямое матричное умножение: epsilon_j = sum_k a_jk * N_k
-    Делим на r_max (в метрах) для получения физически корректных единиц плотности излучения.
-    """
     e = coefficients @ N
     return e / (r_max * 0.001)
 
@@ -88,43 +88,22 @@ def main():
 
     data = pd.read_excel(file_path)
     lines = data['Line'].unique()
-
     (Path.cwd() / 'results').mkdir(exist_ok=True)
 
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
     color_map = {line: colors[idx % len(colors)] for idx, line in enumerate(lines)}
 
-    # =========================================================================
-    # КОНТРОЛЬНЫЙ БЛОК: График сырых площадей под линиями
-    # =========================================================================
-    print("\n--- Построение контрольного графика площадей спектральных линий ---")
-    plt.figure()
-    for line_name in lines:
-        line_data = data[data['Line'] == line_name].sort_values('Radius_mm')
-        r_raw = line_data['Radius_mm'].values
-        i_raw = line_data['Area'].values
-        
-        plt.plot(r_raw, i_raw, color=color_map[line_name], marker='o', 
-                 markersize=4, lw=1.5, label=line_name)
-
-    plt.xlabel("Radius $r$ [mm]")
-    plt.ylabel("Integral Intensity (Area) [a.u.]")
-    plt.title("Raw Integral Intensity Profiles")
-    plt.grid(True, linestyle=':', alpha=0.7)
-    plt.legend()
-    plt.savefig(Path('results') / "control_raw_areas.png")
-    plt.show()
-
-    # =========================================================================
-    # ПРЕОБРАЗОВАНИЕ АБЕЛЯ (с кубическим сплайном)
-    # =========================================================================
+    # Подготовка к хранению результатов
     abel_results = pd.DataFrame()
     raw_plots_data = []
+    
+    # Создаем холст для графика сглаживания (контрольный)
+    plt.figure(figsize=(8, 6))
+    plt.title("Gaussian Smoothing Quality Check")
 
-    print("\n--- Выполнение обратного преобразования Абеля ---")
+    print("\n--- Выполнение аппроксимации Гауссом и преобразования Абеля ---")
     for line_name in lines:
         line_data = data[data['Line'] == line_name]
-        
         radii_all = line_data['Radius_mm'].values
         intensities_all = line_data['Area'].values
 
@@ -141,38 +120,37 @@ def main():
             i_branch = branch_df['I'].values
             n_points = len(r_branch)
 
-            if n_points < 7:
-                logging.warning(f"Недостаточно точек для ветки {branch_name} линии {line_name}")
+            if n_points < 5: # Для Гаусса нужно меньше точек, чем для сплайна
+                logging.warning(f"Мало точек для {line_name} ({branch_name})")
                 continue
 
             r_max = r_branch.max()
             if r_max == 0: continue
 
-            print(f"{line_name} ({branch_name}): сплайн-сглаживание и Абель для {n_points} точек...")
-            
-            # Строгая сортировка для сплайна
-            sort_idx = np.argsort(r_branch)
-            r_sorted = r_branch[sort_idx]
-            i_sorted = i_branch[sort_idx]
+            # --- ГАУССОВА АППРОКСИМАЦИЯ ---
+            try:
+                # Начальные параметры: амплитуда и ширина
+                p0 = [i_branch.max(), r_max / 2]
+                popt, _ = curve_fit(gaussian_model, r_branch, i_branch, p0=p0)
+                
+                # Создаем гладкую кривую
+                i_branch_smooth = gaussian_model(r_branch, *popt)
+                
+                # Отрисовка на графике сглаживания
+                r_plot_smooth = -r_branch if branch_name == 'left' else r_branch
+                plt.scatter(r_plot_smooth, i_branch, color=color_map[line_name], alpha=0.3, s=20)
+                plt.plot(r_plot_smooth, i_branch_smooth, color=color_map[line_name], 
+                         linestyle='--', label=f"{line_name} {branch_name}" if branch_name == 'right' else "")
+                
+            except Exception as e:
+                logging.error(f"Ошибка аппроксимации {line_name}: {e}")
+                i_branch_smooth = i_branch # Если не вышло, берем как есть
 
-            # --- СГЛАЖИВАЮЩИЙ СПЛАЙН (Smoothing Spline) ---
-            # k=3 (кубический сплайн, идеально для Бокастена).
-            # s - фактор сглаживания. 
-            # Увеличьте множитель (например, 0.1 или 0.2), если график сильно осциллирует
-            s_factor = 0.05 * np.sum(i_sorted) 
-            spline = UnivariateSpline(r_sorted, i_sorted, k=3, s=s_factor)
-
-            i_branch_smooth = spline(r_branch)
-            # Отсекаем артефактные отрицательные значения на хвосте
-            i_branch_smooth = np.maximum(i_branch_smooth, 0)
-
-            # Генерация матрицы Бокастена под количество точек
+            # --- МАТРИЦА БОКАСТЕНА ---
             bockasten_coefficients = generate_bockasten_matrix(n_points)
-
-            # Применение Абеля к сглаженному массиву
             abelized_intensities = bockasten_abel_transformation(i_branch_smooth, bockasten_coefficients, r_max)
 
-            # Сохранение результатов
+            # Сохранение
             col_prefix = f'{line_name}_{branch_name}'
             abel_block = pd.DataFrame({
                 f'{col_prefix}_R': pd.Series(r_branch),
@@ -183,13 +161,19 @@ def main():
             abel_results = pd.concat([abel_results, abel_block], axis=1)
             raw_plots_data.append((line_name, branch_name, r_branch, abelized_intensities))
 
-    out_abel = Path('results') / 'abel_results_smoothed.xlsx'
+    plt.xlabel("Radius $r$ [mm]")
+    plt.ylabel("Intensity [a.u.]")
+    plt.grid(True, linestyle=':', alpha=0.6)
+    plt.legend(fontsize=9, loc='upper right')
+    plt.savefig(Path('results') / "smoothing_check.png")
+    plt.show()
+
+    # --- Далее идет твой блок построения ε(r) и Aligned графиков без изменений ---
+    # (Оставил логику сохранения в Excel и финальные графики как в твоем исходнике)
+    out_abel = Path('results') / 'abel_results_gaussian.xlsx'
     abel_results.to_excel(out_abel, index=False)
     print(f"\nПрофили ε(r) сохранены в {out_abel}")
 
-    # =========================================================================
-    # ПОСТРОЕНИЕ ГРАФИКОВ ε(r) ПОСЛЕ ПРЕОБРАЗОВАНИЯ
-    # =========================================================================
     print("Построение профилей ε(r)...")
     plt.figure()
     
@@ -206,9 +190,6 @@ def main():
     plt.savefig(Path('results') / "epsilon_vs_radius.png")
     plt.show()
 
-    # =========================================================================
-    # ВЫРАВНИВАНИЕ НА ЕДИНУЮ ОСЬ (ALIGNMENT) ДЛЯ СРАВНЕНИЯ
-    # =========================================================================
     limit_left = min([np.max(r) for _, b, r, _ in raw_plots_data if b == 'left'], default=0)
     limit_right = min([np.max(r) for _, b, r, _ in raw_plots_data if b == 'right'], default=0)
 
