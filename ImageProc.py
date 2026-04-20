@@ -26,7 +26,7 @@ plt.rcParams.update({
     "ytick.direction": "in",
     "xtick.top": True,
     "ytick.right": True,
-    "figure.figsize": (5, 5),  
+    "figure.figsize": (8, 8),  
     "figure.dpi": 120,         
     "figure.autolayout": True  
 })
@@ -155,9 +155,12 @@ def main():
     
     cu_lines = {
         #"Cu I 465.1": {"bottom": 464.5, "top": 465.6},
-        "Cu I 510.5": {"bottom": 510.0, "top": 511.0},
-        "Cu I 515.3": {"bottom": 514.8, "top": 515.8},
-        "Cu I 521.8": {"bottom": 521.3, "top": 522.3}
+        "Cu I 510.5 nm": {"bottom": 510.2, "top": 511.2},
+        "Cu I 515.3 nm": {"bottom": 514.8, "top": 515.8},
+        "Cu I 521.8 nm": {"bottom": 521.3, "top": 522.3},
+        "Cu I 570.0 nm": {"bottom": 569.4, "top": 570.8},
+        "Cu I 578.2 nm": {"bottom": 577.0, "top": 579},
+
     }
 
     window_length = 75
@@ -213,7 +216,7 @@ def main():
 
     print("\n--- Gaussian Fitting (Spectra) ---")
     all_fit_results = []
-    R2_THRESHOLD = 0.95 
+    R2_THRESHOLD = 0.9 
 
     for line_name, bounds in cu_lines.items():
         line_data = cut_line(data, bounds["bottom"], bounds["top"])
@@ -303,7 +306,7 @@ def main():
                         
                     plt.title(f"{line_name} | {pos_label}")
                     plt.xlabel("Wavelength [nm]")
-                    plt.ylabel("Intensity [a.u.]")
+                    plt.ylabel("Intensity [W/m$^2$/nm]")
                     plt.legend(frameon=False) # No box around legend looks cleaner in papers
                     plt.tight_layout()
                     plt.show()
