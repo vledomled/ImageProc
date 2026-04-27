@@ -96,12 +96,14 @@ def find_cutoff_left(data, start_index: int, threshold: float) -> int:
             return i
     return 0
 
-def gaussian(x, A, mu, sigma):
-    return A * np.exp(-(x - mu)**2 / (2 * sigma**2))
+def gaussian(x, y0, A, mu, sigma):
+    return y0 + A * np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))
+
 
 def fit_gaussian(x_values, y_values):
     x_values = np.asarray(x_values, dtype=float)
     y_values = np.asarray(y_values, dtype=float)
+
     mask = np.isfinite(x_values) & np.isfinite(y_values)
     x_values = x_values[mask]
     y_values = y_values[mask]
@@ -110,31 +112,53 @@ def fit_gaussian(x_values, y_values):
         logging.warning(f"Not enough points for fit: {x_values.size}")
         return None
 
+    # Начальные оценки, похожие по логике на Origin
+    edge_n = max(1, len(y_values) // 10)
+
+    left_edge = y_values[:edge_n]
+    right_edge = y_values[-edge_n:]
+
+    y0_init = np.mean(np.r_[left_edge, right_edge])
+    A_init = np.max(y_values) - y0_init
+    mu_init = x_values[np.argmax(y_values)]
+    sigma_init = (x_values.max() - x_values.min()) / 6
+    if sigma_init <= 0:
+        sigma_init = 0.1
+
     gauss_mod = Model(gaussian)
+
     params = gauss_mod.make_params(
-        A=np.max(y_values),
-        mu=x_values[np.argmax(y_values)],
-        sigma=(x_values.max() - x_values.min()) / 6 or 0.1
+        y0=y0_init,
+        A=A_init,
+        mu=mu_init,
+        sigma=sigma_init
     )
+
+    # Чтобы sigma не ушла в отрицательное значение
+    params['sigma'].min = 1e-12
+
     try:
         result = gauss_mod.fit(y_values, params, x=x_values)
+
         if result.success:
             if hasattr(result, 'rsquared'):
                 r2 = result.rsquared
             else:
-                ss_res = np.sum(result.residual**2)
-                ss_tot = np.sum((y_values - np.mean(y_values))**2)
+                ss_res = np.sum(result.residual ** 2)
+                ss_tot = np.sum((y_values - np.mean(y_values)) ** 2)
                 r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
 
             return {
+                'y0': result.params['y0'].value,
                 'A': result.params['A'].value,
                 'Mu': result.params['mu'].value,
                 'Sigma': result.params['sigma'].value,
                 'R2': r2,
                 'RedChi': result.redchi
             }
-        else:
-            return None
+
+        return None
+
     except Exception as e:
         logging.error(f"Fit error: {e}")
         return None
@@ -155,17 +179,17 @@ def main():
     
     cu_lines = {
         #"Cu I 465.1": {"bottom": 464.5, "top": 465.6},
-        "Cu I 510.5 nm": {"bottom": 510.2, "top": 511.2},
+        "Cu I 510.5 nm": {"bottom": 510.2, "top": 511.6},
         "Cu I 515.3 nm": {"bottom": 514.8, "top": 515.8},
         "Cu I 521.8 nm": {"bottom": 521.3, "top": 522.3},
         "Cu I 570.0 nm": {"bottom": 569.4, "top": 570.8},
-        "Cu I 578.2 nm": {"bottom": 577.0, "top": 579},
+        #"Cu I 578.2 nm": {"bottom": 577.0, "top": 579},
 
     }
 
     window_length = 75
     polyorder = 3
-    num_points_side = 9  # 40 points per side (including boundaries)
+    num_points_side = 40  
     
     line_profiles = {}
     centers = {}
@@ -196,7 +220,6 @@ def main():
             diff_pct = (diff_px / total_pixels) * 100 
             print(f"{line_name}: Center = {max_pos} px | Shift: {diff_px:+} px ({diff_pct:+.2f}%)")
 
-    # === CONTORL PLOT: Spatial Profiles Comparison ===
     plt.figure()
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'] # Standard qualitative colormap
     for idx, (line_name, profile) in enumerate(line_profiles.items()):
@@ -216,7 +239,7 @@ def main():
 
     print("\n--- Gaussian Fitting (Spectra) ---")
     all_fit_results = []
-    R2_THRESHOLD = 0.9 
+    R2_THRESHOLD = 0.95 
 
     for line_name, bounds in cu_lines.items():
         line_data = cut_line(data, bounds["bottom"], bounds["top"])
@@ -296,7 +319,7 @@ def main():
                     x_dense = np.linspace(np.min(spectrum_x), np.max(spectrum_x), 500)
                     plt.figure()
                     plt.scatter(spectrum_x, spectrum_y, label='Experimental data', color='black', s=15, zorder=3)
-                    plt.plot(x_dense, gaussian(x_dense, fit['A'], fit['Mu'], fit['Sigma']), 
+                    plt.plot(x_dense, gaussian(x_dense, fit['y0'], fit['A'], fit['Mu'], fit['Sigma']), 
                              label=f'Gaussian fit ($R^2={fit.get("R2", 0):.3f}$)', color='red', linewidth=2, zorder=2)
                     
                     if s_idx == center:
@@ -307,7 +330,7 @@ def main():
                     plt.title(f"{line_name} | {pos_label}")
                     plt.xlabel("Wavelength [nm]")
                     plt.ylabel("Intensity [W/m$^2$/nm]")
-                    plt.legend(frameon=False) # No box around legend looks cleaner in papers
+                    plt.legend(frameon=False) 
                     plt.tight_layout()
                     plt.show()
             else:

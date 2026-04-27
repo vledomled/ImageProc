@@ -14,6 +14,25 @@ os.makedirs(out_dir, exist_ok=True)
 
 K_B_EV = 8.617333262e-5  # eV/K
 
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "DejaVu Serif", "Computer Modern Roman"],
+    "font.size": 12,
+    "axes.labelsize": 14,
+    "axes.titlesize": 14,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "legend.fontsize": 11,
+    "axes.linewidth": 1.5,
+    "xtick.direction": "in",
+    "ytick.direction": "in",
+    "xtick.top": True,
+    "ytick.right": True,
+    "figure.figsize": (7, 6),
+    "figure.dpi": 150,
+    "figure.autolayout": True
+})
+
 # База данных линий: длина волны_нм : (Энергия_верхнего_уровня_эВ, g*f)
 LINE_DB = {
     510.5537: (3.816948, 0.0197),
@@ -21,26 +40,66 @@ LINE_DB = {
     521.8197: (6.192444, 1.97166876),
     578.2127: (3.78615 , 0.013),
     465.1119: (7.737547, 1.4217765),
-    570.0237: (3.816948, 0.00565054),
+    #570.0237: (3.816948, 0.00565054),
 }
 
-def header_to_nm(col):
-    """Извлекает длину волны из заголовка колонки типа 'Cu I 510.5 nm_Left'."""
-    s = str(col).strip().replace(",", ".")
-    # Оставляем только цифры и точку
-    digits = "".join(ch for ch in s if (ch.isdigit() or ch == "."))
-    try:
-        v = float(digits)
-        # Если вдруг в названии 5105 (в ангстремах), переводим в нм
-        return v / 10.0 if v > 1000 else v
-    except ValueError:
-        return np.nan
+def annotate_inside_axes(ax, x, y, text):
+    x_min, x_max = ax.get_xlim()
+    y_min, y_max = ax.get_ylim()
 
-def nearest_nm(nm):
-    """Находит ближайшую длину волны в базе данных."""
-    if np.isnan(nm): return None
+    x_range = x_max - x_min
+    y_range = y_max - y_min
+
+    # По умолчанию — вправо и вверх
+    dx, dy = 6, 6
+    ha, va = 'left', 'bottom'
+
+    # Если точка близко к правому краю — смещаем влево
+    if x > x_max - 0.12 * x_range:
+        dx = -6
+        ha = 'right'
+    elif x < x_min + 0.12 * x_range:
+        dx = 6
+        ha = 'left'
+
+    # Если точка близко к верхнему краю — смещаем вниз
+    if y > y_max - 0.12 * y_range:
+        dy = -6
+        va = 'top'
+    elif y < y_min + 0.12 * y_range:
+        dy = 6
+        va = 'bottom'
+
+    ax.annotate(
+        text,
+        xy=(x, y),
+        xytext=(dx, dy),
+        textcoords='offset points',
+        ha=ha,
+        va=va,
+        clip_on=True
+    )
+
+def header_to_nm(col):
+    s = str(col).strip().replace(",", ".")
+    m = re.search(r"(\d+(?:\.\d+)?)\s*nm\b", s, flags=re.IGNORECASE)
+    if m is None:
+        m = re.search(r"(\d+(?:\.\d+)?)", s)
+    if m is None:
+        return np.nan
+    v = float(m.group(1))
+    return v / 10.0 if v > 1000 else v
+
+
+def nearest_nm(nm, tol=0.35):
+    if not np.isfinite(nm):
+        return None
     ks = np.array(list(LINE_DB.keys()), dtype=float)
-    return float(ks[np.argmin(np.abs(ks - nm))])
+    idx = int(np.argmin(np.abs(ks - nm)))
+    key = float(ks[idx])
+    if abs(key - nm) > tol:
+        return None
+    return key
 
 def compute_profile(df, side: str, radius_col: str, line_cols: list[str]):
     # Преобразование данных в числа
@@ -72,20 +131,30 @@ def compute_profile(df, side: str, radius_col: str, line_cols: list[str]):
         T_ref = -1.0 / (K_B_EV * res.slope) if res.slope != 0 else np.nan
         T_ref_err = res.stderr / (K_B_EV * res.slope**2) if res.slope != 0 else np.nan
         
-        # Рисуем проверочный график Больцмана
         plt.figure(figsize=(7, 5))
+        ax = plt.gca()
+
         plt.scatter(boltz["E_eV"], boltz["Y"], color='red', zorder=3)
-        for _, r in boltz.iterrows():
-            plt.annotate(f"{r['lambda_nm']:.1f}", (r['E_eV'], r['Y']), xytext=(5,5), textcoords='offset points')
-        
+
         ex = np.array([boltz["E_eV"].min(), boltz["E_eV"].max()])
-        plt.plot(ex, res.intercept + res.slope*ex, 'k--', alpha=0.5)
+        plt.plot(ex, res.intercept + res.slope * ex, alpha=0.5)
+
         plt.title(f"Boltzmann Plot ({side}) r={radii[idx_ref]:.2f}mm\nT = {T_ref:.0f} K")
         plt.xlabel("Upper Energy E [eV]")
         plt.ylabel("ln(ε λ³ / gf)")
         plt.grid(True, linestyle=':')
+        plt.draw()
+
+        for _, r in boltz.iterrows():
+            annotate_inside_axes(
+                ax,
+                r["E_eV"],
+                r["Y"],
+                f"{r['lambda_nm']:.1f}"
+            )
+
         plt.savefig(os.path.join(out_dir, f"boltzmann_{side}.png"))
-        plt.close()
+        plt.show()
 
     # --- Расчет профиля T(r) по всем точкам радиуса ---
     T_vals, Terr_vals = [], []
