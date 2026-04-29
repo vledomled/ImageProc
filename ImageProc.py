@@ -18,7 +18,7 @@ plt.rcParams.update({
     "axes.titlesize": 14,
     "xtick.labelsize": 12,
     "ytick.labelsize": 12,
-    "legend.fontsize": 11,
+    "legend.fontsize": 12,
     "axes.linewidth": 1.5,
     "xtick.major.width": 1.5,
     "ytick.major.width": 1.5,
@@ -230,7 +230,7 @@ def main():
         plt.plot(norm_profile, label=f"{line_name} (Center: {center})", color=c, lw=2)
         plt.axvline(center, linestyle='--', color=c, alpha=0.7)
 
-    plt.title("Spatial Profiles of Cu Lines")
+    #plt.title("Spatial Profiles of Cu Lines")
     plt.xlabel("Spatial Coordinate [pixels]")
     plt.ylabel("Relative Intensity [a.u.]")
     plt.legend()
@@ -327,7 +327,7 @@ def main():
                     else:
                         pos_label = f"Edge ($R = {radius_mm:.3f}$ mm)"
                         
-                    plt.title(f"{line_name} | {pos_label}")
+                    #plt.title(f"{line_name} | {pos_label}")
                     plt.xlabel("Wavelength [nm]")
                     plt.ylabel("Intensity [W/m$^2$/nm]")
                     plt.legend(frameon=False) 

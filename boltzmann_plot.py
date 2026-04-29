@@ -7,7 +7,7 @@ from pathlib import Path
 import re # Добавь это в самое начало файла!
 
 # ====== НАСТРОЙКИ ======
-in_xlsx  = "aligned_results.xlsx"
+in_xlsx  = "results/aligned_results.xlsx"
 out_dir  = "results"
 r_ref_mm = 0.0  # Опорная точка для построения одного графика Больцмана
 os.makedirs(out_dir, exist_ok=True)
@@ -26,7 +26,7 @@ plt.rcParams.update({
     "axes.titlesize": 14,
     "xtick.labelsize": 12,
     "ytick.labelsize": 12,
-    "legend.fontsize": 11,
+    "legend.fontsize": 12,
     "axes.linewidth": 1.5,
     "xtick.direction": "in",
     "ytick.direction": "in",
@@ -356,6 +356,7 @@ def compute_profile(df, side: str, radius_col: str, line_cols: list[str], part_f
 
     Ne_vals = []
     Ne_err_vals = []
+    Ne_rel_err_vals = []
 
     for i in range(len(radii)):
         X = []
@@ -379,7 +380,7 @@ def compute_profile(df, side: str, radius_col: str, line_cols: list[str], part_f
                 b = lr.intercept
                 b_err = getattr(lr, "intercept_stderr", np.nan)
 
-                Ne, Ne_err, part_func, part_func_err = calc_electron_concentration(
+                Ne, Ne_err, Ne_rel_err, part_func, part_func_err = calc_electron_concentration(
                     intercept_b=b,
                     intercept_b_err=b_err,
                     T_K=Ti,
@@ -396,7 +397,7 @@ def compute_profile(df, side: str, radius_col: str, line_cols: list[str], part_f
                 part_func_err = np.nan
                 Ne = np.nan
                 Ne_err = np.nan
-
+                Ne_rel_err = np.nan
         else:
             Ti = np.nan
             dTi = np.nan
@@ -406,6 +407,7 @@ def compute_profile(df, side: str, radius_col: str, line_cols: list[str], part_f
             part_func_err = np.nan
             Ne = np.nan
             Ne_err = np.nan
+            Ne_rel_err = np.nan
 
         T_vals.append(Ti)
         Terr_vals.append(dTi)
@@ -418,6 +420,7 @@ def compute_profile(df, side: str, radius_col: str, line_cols: list[str], part_f
 
         Ne_vals.append(Ne)
         Ne_err_vals.append(Ne_err)
+        Ne_rel_err_vals.append(Ne_rel_err)
 
     prof = pd.DataFrame({
         "Radius_mm": radii,
@@ -428,7 +431,8 @@ def compute_profile(df, side: str, radius_col: str, line_cols: list[str], part_f
         "Partition_func": Part_vals,
         "Partition_func_err": Part_err_vals,
         "Electron_concentration": Ne_vals,
-        "Electron_concentration_err": Ne_err_vals
+        "Electron_concentration_err": Ne_err_vals,
+        "Electron_concentration_rel_err": Ne_rel_err_vals
     })
 
     prof.to_excel(os.path.join(out_dir, f"radial_T_{side}.xlsx"), index=False)
@@ -505,22 +509,27 @@ plt.savefig(os.path.join(out_dir, "T_profile_final.png"), dpi=250)
 plt.show()
 
 # --- График концентрации электронов ---
+# --- График концентрации электронов ---
 plt.figure(figsize=(9, 6))
 
 if "Electron_concentration" in prof_left.columns:
     mask_l = (
         np.isfinite(prof_left["Radius_mm"])
         & np.isfinite(prof_left["Electron_concentration"])
-        & np.isfinite(prof_left["Electron_concentration_err"])
+        & np.isfinite(prof_left["Electron_concentration_rel_err"])
         & (prof_left["Electron_concentration"] > 0)
-        & (prof_left["Electron_concentration_err"] >= 0)
+        & (prof_left["Electron_concentration_rel_err"] >= 0)
     )
 
     if mask_l.any():
+        x_l = -prof_left.loc[mask_l, "Radius_mm"].to_numpy(float)
+        y_l = prof_left.loc[mask_l, "Electron_concentration"].to_numpy(float)
+        rel_l = prof_left.loc[mask_l, "Electron_concentration_rel_err"].to_numpy(float)
+
         plt.errorbar(
-            -prof_left.loc[mask_l, "Radius_mm"],
-            prof_left.loc[mask_l, "Electron_concentration"],
-            yerr=prof_left.loc[mask_l, "Electron_concentration_err"],
+            x_l,
+            y_l,
+            yerr=make_lognormal_yerr(y_l, rel_l),
             fmt="o",
             markersize=4,
             capsize=3,
@@ -533,16 +542,20 @@ if "Electron_concentration" in prof_right.columns:
     mask_r = (
         np.isfinite(prof_right["Radius_mm"])
         & np.isfinite(prof_right["Electron_concentration"])
-        & np.isfinite(prof_right["Electron_concentration_err"])
+        & np.isfinite(prof_right["Electron_concentration_rel_err"])
         & (prof_right["Electron_concentration"] > 0)
-        & (prof_right["Electron_concentration_err"] >= 0)
+        & (prof_right["Electron_concentration_rel_err"] >= 0)
     )
 
     if mask_r.any():
+        x_r = prof_right.loc[mask_r, "Radius_mm"].to_numpy(float)
+        y_r = prof_right.loc[mask_r, "Electron_concentration"].to_numpy(float)
+        rel_r = prof_right.loc[mask_r, "Electron_concentration_rel_err"].to_numpy(float)
+
         plt.errorbar(
-            prof_right.loc[mask_r, "Radius_mm"],
-            prof_right.loc[mask_r, "Electron_concentration"],
-            yerr=prof_right.loc[mask_r, "Electron_concentration_err"],
+            x_r,
+            y_r,
+            yerr=make_lognormal_yerr(y_r, rel_r),
             fmt="s",
             markersize=4,
             capsize=3,
@@ -551,11 +564,12 @@ if "Electron_concentration" in prof_right.columns:
             color="#ff7f0e"
         )
 
-#plt.yscale("log")
+plt.yscale("log")
 plt.ylim(1e20, 1e22)
+
 plt.axvline(0, color="black", lw=1.2, linestyle="--")
 plt.xlabel("Radius [mm]", fontsize=12)
-plt.ylabel("Number density []", fontsize=12)
+plt.ylabel("Number density [$m^{-3}$]", fontsize=12)
 plt.legend()
 plt.grid(True, which="both", linestyle=":", alpha=0.6)
 plt.tight_layout()

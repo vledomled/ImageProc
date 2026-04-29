@@ -20,7 +20,7 @@ plt.rcParams.update({
     "axes.titlesize": 14,
     "xtick.labelsize": 12,
     "ytick.labelsize": 12,
-    "legend.fontsize": 11,
+    "legend.fontsize": 12,
     "axes.linewidth": 1.5,
     "xtick.direction": "in",
     "ytick.direction": "in",
@@ -32,8 +32,6 @@ plt.rcParams.update({
 })
 
 
-# Если True — в Абеля идёт полный фит: y0 + A*exp(...)
-# Если False — в Абеля идёт только пик без фона: A*exp(...)
 USE_BASELINE_IN_ABEL = True
 
 
@@ -322,7 +320,6 @@ def main():
     half_area_rows = []
 
     plt.figure(figsize=(8, 6))
-    plt.title("Gaussian Approximation of Left/Right Spatial Halves")
 
     print("\n--- Раздельная гауссова аппроксимация половин и преобразование Абеля ---")
 
@@ -555,7 +552,6 @@ def main():
 
     plt.xlabel("Radius $r$ [mm]")
     plt.ylabel("Emissivity $\\varepsilon(r)$ [W/m$^3$]")
-    plt.title("Radial Emissivity Profiles — Separate Left/Right Abel")
     plt.grid(True, linestyle=":", alpha=0.7)
     plt.legend()
     plt.savefig(out_dir / "epsilon_vs_radius.png", dpi=250)
@@ -714,7 +710,6 @@ def main():
 
     plt.xlabel("Radius $r$ [mm]")
     plt.ylabel("Aligned $\\varepsilon(r)$ [W/m$^3$]")
-    plt.title("Aligned Radial Emissivity Profiles")
     plt.grid(True, linestyle=":", alpha=0.7)
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.savefig(out_dir / "aligned_epsilon.png", bbox_inches="tight", dpi=250)
