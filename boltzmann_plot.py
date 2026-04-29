@@ -13,6 +13,10 @@ r_ref_mm = 0.0  # Опорная точка для построения одно
 os.makedirs(out_dir, exist_ok=True)
 
 K_B_EV = 8.617333262e-5  # eV/K
+c_m_s = 3e+8
+h = 6.63e-34
+part_func_txt = "partition_func.txt"
+NE_CONST = 66700000000000
 
 plt.rcParams.update({
     "font.family": "serif",
@@ -42,6 +46,125 @@ LINE_DB = {
     465.1119: (7.737547, 1.4217765),
     #570.0237: (3.816948, 0.00565054),
 }
+
+def load_partition_function_txt(path):
+
+    if not os.path.exists(path):
+        print(f"ПРЕДУПРЕЖДЕНИЕ: файл статсуммы не найден: {path}")
+        return None
+
+    try:
+        pf = pd.read_csv(
+            path,
+            sep=r"[\s,;]+",
+            comment="#",
+            engine="python",
+            header=None
+        )
+    except Exception as e:
+        print(f"ОШИБКА чтения файла статсуммы {path}: {e}")
+        return None
+
+    if pf.shape[1] < 2:
+        print(f"ОШИБКА: в {path} должно быть минимум 2 колонки: T_K и part_func")
+        return None
+
+    pf = pf.iloc[:, :2].copy()
+    pf.columns = ["T_K", "part_func"]
+
+    pf["T_K"] = pd.to_numeric(pf["T_K"], errors="coerce")
+    pf["part_func"] = pd.to_numeric(pf["part_func"], errors="coerce")
+
+    pf = pf.dropna(subset=["T_K", "part_func"])
+
+    if pf.empty:
+        print(f"ОШИБКА: не удалось прочитать численные значения из {path}")
+        return None
+
+    pf = (
+        pf
+        .groupby("T_K", as_index=False)["part_func"]
+        .mean()
+        .sort_values("T_K")
+    )
+
+    print("\n--- Статсумма загружена ---")
+    print(f"Файл: {path}")
+    print(f"T range: {pf['T_K'].min():.1f} ... {pf['T_K'].max():.1f} K")
+    print(f"Точек: {len(pf)}")
+
+    return pf
+
+
+def get_partition_function_with_error(T_K, T_err, pf_df):
+
+    if pf_df is None:
+        return np.nan, np.nan
+
+    if not np.isfinite(T_K):
+        return np.nan, np.nan
+
+    T_arr = pf_df["T_K"].to_numpy(float)
+    U_arr = pf_df["part_func"].to_numpy(float)
+
+    if len(T_arr) < 2:
+        return np.nan, np.nan
+
+    if T_K < T_arr.min() or T_K > T_arr.max():
+        return np.nan, np.nan
+
+    U = np.interp(T_K, T_arr, U_arr)
+
+    if not np.isfinite(T_err):
+        return U, np.nan
+
+    dU_dT_arr = np.gradient(U_arr, T_arr)
+    dU_dT = np.interp(T_K, T_arr, dU_dT_arr)
+
+    U_err = abs(dU_dT) * abs(T_err)
+
+    return U, U_err
+
+def calc_electron_concentration(intercept_b, intercept_b_err, T_K, T_err, pf_df):
+
+    if not np.isfinite(intercept_b) or not np.isfinite(T_K):
+        return np.nan, np.nan, np.nan, np.nan, np.nan
+
+    U, U_err = get_partition_function_with_error(
+        T_K=T_K,
+        T_err=T_err,
+        pf_df=pf_df
+    )
+
+    if not np.isfinite(U) or U <= 0:
+        return np.nan, np.nan, np.nan, np.nan, np.nan
+
+    Ne = (
+        np.exp(intercept_b)
+        * U
+        / NE_CONST
+        / c_m_s
+        / h
+        * 1e-9
+    )
+
+    if (
+        np.isfinite(Ne)
+        and np.isfinite(intercept_b_err)
+        and np.isfinite(U_err)
+        and U > 0
+    ):
+        Ne_rel_err = np.sqrt(
+            intercept_b_err ** 2
+            + (U_err / U) ** 2
+        )
+
+        Ne_err = Ne * Ne_rel_err
+    else:
+        Ne_rel_err = np.nan
+        Ne_err = np.nan
+
+    return Ne, Ne_err, Ne_rel_err, U, U_err
 
 def annotate_inside_axes(ax, x, y, text):
     x_min, x_max = ax.get_xlim()
@@ -90,6 +213,18 @@ def header_to_nm(col):
     v = float(m.group(1))
     return v / 10.0 if v > 1000 else v
 
+def make_lognormal_yerr(y, rel_err):
+    y = np.asarray(y, dtype=float)
+    rel_err = np.asarray(rel_err, dtype=float)
+
+    y_low = y * np.exp(-rel_err)
+    y_high = y * np.exp(rel_err)
+
+    lower = y - y_low
+    upper = y_high - y
+
+    return np.vstack([lower, upper])
+
 
 def nearest_nm(nm, tol=0.35):
     if not np.isfinite(nm):
@@ -101,88 +236,203 @@ def nearest_nm(nm, tol=0.35):
         return None
     return key
 
-def compute_profile(df, side: str, radius_col: str, line_cols: list[str]):
+def compute_profile(df, side: str, radius_col: str, line_cols: list[str], part_func_df=None):
     # Преобразование данных в числа
     radii = pd.to_numeric(df[radius_col], errors="coerce").to_numpy(float)
-    
+
     # Маппинг колонок на ключи из LINE_DB
     mapping = {}
+
     for c in line_cols:
         wave = header_to_nm(c)
         key = nearest_nm(wave)
-        if key: mapping[c] = key
 
-    # --- Построение графика Больцмана в опорной точке (r ≈ 0) ---
+        if key is not None:
+            mapping[c] = key
+
+    if len(mapping) == 0:
+        print(f"ОШИБКА: для стороны {side} не найдено ни одной линии из LINE_DB")
+
+        prof = pd.DataFrame({
+            "Radius_mm": radii,
+            "T_K": np.nan,
+            "T_err": np.nan,
+            "Intercept_b": np.nan,
+            "Intercept_b_err": np.nan,
+            "Partition_func": np.nan,
+            "Partition_func_err": np.nan,
+            "Electron_concentration": np.nan,
+            "Electron_concentration_err": np.nan
+        })
+
+        prof.to_excel(os.path.join(out_dir, f"radial_T_{side}.xlsx"), index=False)
+        return prof, (np.nan, np.nan, np.nan)
+
+    # --- Построение графика Больцмана в опорной точке r_ref_mm ---
     idx_ref = int(np.nanargmin(np.abs(radii - r_ref_mm)))
+
     rows = []
+
     for col, nm in mapping.items():
         eps = float(pd.to_numeric(df[col].iloc[idx_ref], errors="coerce"))
+
         if not np.isfinite(eps) or eps <= 0:
             continue
+
         E, gf = LINE_DB[nm]
-        Y = np.log(eps * (nm**3) / gf)
+        Y = np.log(eps * (nm ** 3) / gf)
+
         rows.append((nm, E, gf, eps, Y))
 
-    boltz = pd.DataFrame(rows, columns=["lambda_nm","E_eV","gf","epsilon","Y"]).sort_values("E_eV")
-    
-    T_ref, T_ref_err = np.nan, np.nan
-    if boltz["E_eV"].nunique() >= 2:
+    boltz = pd.DataFrame(
+        rows,
+        columns=["lambda_nm", "E_eV", "gf", "epsilon", "Y"]
+    ).sort_values("E_eV")
+
+    T_ref = np.nan
+    T_ref_err = np.nan
+
+    if not boltz.empty and boltz["E_eV"].nunique() >= 2:
         res = linregress(boltz["E_eV"], boltz["Y"])
-        T_ref = -1.0 / (K_B_EV * res.slope) if res.slope != 0 else np.nan
-        T_ref_err = res.stderr / (K_B_EV * res.slope**2) if res.slope != 0 else np.nan
-        
-        plt.figure(figsize=(7, 5))
-        ax = plt.gca()
 
-        plt.scatter(boltz["E_eV"], boltz["Y"], color='red', zorder=3)
+        if res.slope != 0:
+            T_ref = -1.0 / (K_B_EV * res.slope)
+            T_ref_err = res.stderr / (K_B_EV * res.slope ** 2)
 
-        ex = np.array([boltz["E_eV"].min(), boltz["E_eV"].max()])
-        plt.plot(ex, res.intercept + res.slope * ex, alpha=0.5)
+            plt.figure(figsize=(7, 5))
+            ax = plt.gca()
 
-        plt.title(f"Boltzmann Plot ({side}) r={radii[idx_ref]:.2f}mm\nT = {T_ref:.0f} K")
-        plt.xlabel("Upper Energy E [eV]")
-        plt.ylabel("ln(ε λ³ / gf)")
-        plt.grid(True, linestyle=':')
-        plt.draw()
-
-        for _, r in boltz.iterrows():
-            annotate_inside_axes(
-                ax,
-                r["E_eV"],
-                r["Y"],
-                f"{r['lambda_nm']:.1f}"
+            plt.scatter(
+                boltz["E_eV"],
+                boltz["Y"],
+                color="red",
+                zorder=3
             )
 
-        plt.savefig(os.path.join(out_dir, f"boltzmann_{side}.png"))
-        plt.show()
+            ex = np.array([
+                boltz["E_eV"].min(),
+                boltz["E_eV"].max()
+            ])
 
-    # --- Расчет профиля T(r) по всем точкам радиуса ---
-    T_vals, Terr_vals = [], []
+            plt.plot(
+                ex,
+                res.intercept + res.slope * ex,
+                "k--",
+                alpha=0.6
+            )
+
+            plt.title(
+                f"Boltzmann Plot ({side}) r={radii[idx_ref]:.2f} mm\n"
+                f"T = {T_ref:.0f} ± {T_ref_err:.0f} K"
+            )
+
+            plt.xlabel("Upper Energy E [eV]")
+            plt.ylabel("ln(ε λ³ / gf)")
+            plt.grid(True, linestyle=":")
+
+            plt.draw()
+
+            for _, row in boltz.iterrows():
+                annotate_inside_axes(
+                    ax,
+                    row["E_eV"],
+                    row["Y"],
+                    f"{row['lambda_nm']:.1f}"
+                )
+
+            plt.tight_layout()
+            plt.savefig(os.path.join(out_dir, f"boltzmann_{side}.png"), dpi=250)
+            plt.show()
+
+    # --- Расчёт профилей T(r), intercept, U(T), Ne(r) ---
+    T_vals = []
+    Terr_vals = []
+
+    B_vals = []
+    Berr_vals = []
+
+    Part_vals = []
+    Part_err_vals = []
+
+    Ne_vals = []
+    Ne_err_vals = []
+
     for i in range(len(radii)):
-        X, Ylist = [], []
+        X = []
+        Ylist = []
+
         for col, nm in mapping.items():
             eps = pd.to_numeric(df[col].iloc[i], errors="coerce")
+
             if np.isfinite(eps) and eps > 0:
                 E, gf = LINE_DB[nm]
                 X.append(E)
-                Ylist.append(np.log(eps * (nm**3) / gf))
-        
+                Ylist.append(np.log(eps * (nm ** 3) / gf))
+
         if len(set(X)) >= 2:
             lr = linregress(X, Ylist)
-            Ti = -1.0/(K_B_EV * lr.slope) if lr.slope != 0 else np.nan
-            dTi = lr.stderr/(K_B_EV * lr.slope**2) if lr.slope != 0 else np.nan
+
+            if lr.slope != 0:
+                Ti = -1.0 / (K_B_EV * lr.slope)
+                dTi = lr.stderr / (K_B_EV * lr.slope ** 2)
+
+                b = lr.intercept
+                b_err = getattr(lr, "intercept_stderr", np.nan)
+
+                Ne, Ne_err, part_func, part_func_err = calc_electron_concentration(
+                    intercept_b=b,
+                    intercept_b_err=b_err,
+                    T_K=Ti,
+                    T_err=dTi,
+                    pf_df=part_func_df
+                )
+
+            else:
+                Ti = np.nan
+                dTi = np.nan
+                b = np.nan
+                b_err = np.nan
+                part_func = np.nan
+                part_func_err = np.nan
+                Ne = np.nan
+                Ne_err = np.nan
+
         else:
-            Ti, dTi = np.nan, np.nan
-        
+            Ti = np.nan
+            dTi = np.nan
+            b = np.nan
+            b_err = np.nan
+            part_func = np.nan
+            part_func_err = np.nan
+            Ne = np.nan
+            Ne_err = np.nan
+
         T_vals.append(Ti)
         Terr_vals.append(dTi)
+
+        B_vals.append(b)
+        Berr_vals.append(b_err)
+
+        Part_vals.append(part_func)
+        Part_err_vals.append(part_func_err)
+
+        Ne_vals.append(Ne)
+        Ne_err_vals.append(Ne_err)
 
     prof = pd.DataFrame({
         "Radius_mm": radii,
         "T_K": T_vals,
-        "T_err": Terr_vals
+        "T_err": Terr_vals,
+        "Intercept_b": B_vals,
+        "Intercept_b_err": Berr_vals,
+        "Partition_func": Part_vals,
+        "Partition_func_err": Part_err_vals,
+        "Electron_concentration": Ne_vals,
+        "Electron_concentration_err": Ne_err_vals
     })
+
     prof.to_excel(os.path.join(out_dir, f"radial_T_{side}.xlsx"), index=False)
+
     return prof, (radii[idx_ref], T_ref, T_ref_err)
 
 
@@ -228,8 +478,9 @@ if len(left_cols) == 0 or len(right_cols) == 0:
     exit()
 
 # Запуск расчетов
-prof_left,  ref_left  = compute_profile(df, "left",  radius_left,  left_cols)
-prof_right, ref_right = compute_profile(df, "right", radius_right, right_cols)
+part_func_df = load_partition_function_txt(part_func_txt)
+prof_left,  ref_left  = compute_profile(df, "left",  radius_left,  left_cols, part_func_df)
+prof_right, ref_right = compute_profile(df, "right", radius_right, right_cols, part_func_df)
 
 # --- Итоговый график T(r) ---
 plt.figure(figsize=(9, 6))
@@ -251,6 +502,65 @@ plt.grid(True, which='both', linestyle=':', alpha=0.6)
 plt.tight_layout()
 
 plt.savefig(os.path.join(out_dir, "T_profile_final.png"), dpi=250)
+plt.show()
+
+# --- График концентрации электронов ---
+plt.figure(figsize=(9, 6))
+
+if "Electron_concentration" in prof_left.columns:
+    mask_l = (
+        np.isfinite(prof_left["Radius_mm"])
+        & np.isfinite(prof_left["Electron_concentration"])
+        & np.isfinite(prof_left["Electron_concentration_err"])
+        & (prof_left["Electron_concentration"] > 0)
+        & (prof_left["Electron_concentration_err"] >= 0)
+    )
+
+    if mask_l.any():
+        plt.errorbar(
+            -prof_left.loc[mask_l, "Radius_mm"],
+            prof_left.loc[mask_l, "Electron_concentration"],
+            yerr=prof_left.loc[mask_l, "Electron_concentration_err"],
+            fmt="o",
+            markersize=4,
+            capsize=3,
+            label="Left side",
+            alpha=0.8,
+            color="#1f77b4"
+        )
+
+if "Electron_concentration" in prof_right.columns:
+    mask_r = (
+        np.isfinite(prof_right["Radius_mm"])
+        & np.isfinite(prof_right["Electron_concentration"])
+        & np.isfinite(prof_right["Electron_concentration_err"])
+        & (prof_right["Electron_concentration"] > 0)
+        & (prof_right["Electron_concentration_err"] >= 0)
+    )
+
+    if mask_r.any():
+        plt.errorbar(
+            prof_right.loc[mask_r, "Radius_mm"],
+            prof_right.loc[mask_r, "Electron_concentration"],
+            yerr=prof_right.loc[mask_r, "Electron_concentration_err"],
+            fmt="s",
+            markersize=4,
+            capsize=3,
+            label="Right side",
+            alpha=0.8,
+            color="#ff7f0e"
+        )
+
+#plt.yscale("log")
+plt.ylim(1e20, 1e22)
+plt.axvline(0, color="black", lw=1.2, linestyle="--")
+plt.xlabel("Radius [mm]", fontsize=12)
+plt.ylabel("Number density []", fontsize=12)
+plt.legend()
+plt.grid(True, which="both", linestyle=":", alpha=0.6)
+plt.tight_layout()
+
+plt.savefig(os.path.join(out_dir, "electron_concentration_profile.png"), dpi=250)
 plt.show()
 
 print(f"\nРЕЗУЛЬТАТ В ЦЕНТРЕ:")
